@@ -6,12 +6,15 @@
  * Dated on: 13-10-2018
  * Website: www.circuitdigest.com
  */
-
+#define led 13
 int sensorPin = A13;    // select the input pin for the potentiometer
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h> //Library to use BLE as server
 #include <BLE2902.h> 
+#define uS_TO_S_FACTOR 1000000  //Conversion factor for micro seconds to seconds
+#define TIME_TO_SLEEP  60        //Time ESP32 will go to sleep (in seconds)
+#define TIME_CLIENT_WAITING 15
 
 bool _BLEClientConnected = false;
 
@@ -21,11 +24,13 @@ BLEDescriptor BatteryLevelDescriptor(BLEUUID((uint16_t)0x2901));
 
 class MyServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
-      _BLEClientConnected = true;
+      _BLEClientConnected = true; 
+      digitalWrite(led, HIGH);
     };
 
     void onDisconnect(BLEServer* pServer) {
       _BLEClientConnected = false;
+      digitalWrite(led, LOW);
     }
 };
 
@@ -66,19 +71,26 @@ void InitBLE() {
   // Start advertising
   pServer->getAdvertising()->start();
 }
+
+void stopBle() {  
+    BLEDevice::deinit(true);
+}
 const float bat_min = 3.2; // volts - cut off voltage
 const float bat_max = 4.2;  // volts - max voltage
 
 
 void setup() {
+  pinMode(led, OUTPUT);
+
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   
   Serial.begin(115200);
   
   Serial.println("Battery Level Indicator - BLE");
   
   InitBLE();
-
-  while(1) {    
+  unsigned long start = millis();
+  while(_BLEClientConnected || millis() - start < TIME_CLIENT_WAITING * 1000) {    
     float sensorValue = (analogRead(sensorPin) / 4095.0)*2.0*3.3*1.1;
     uint8_t level = (uint8_t)min(100, max(0, (int)map((int)(sensorValue * 100), (int)(bat_min * 100), (int)(bat_max * 100), 0, 100))); 
     BatteryLevelCharacteristic.setValue(&level, 1);
@@ -89,6 +101,10 @@ void setup() {
     Serial.println(level);
     delay(5000);
   }
+  
+  stopBle();
+  //Go to sleep now
+  esp_deep_sleep_start();
 }
 
 void loop() { }
