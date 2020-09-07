@@ -13,7 +13,9 @@ int sensorPin = A13;    // select the input pin for the potentiometer
 #include <BLEServer.h> //Library to use BLE as server
 #include <BLE2902.h> 
 #define uS_TO_S_FACTOR 1000000  //Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP  60        //Time ESP32 will go to sleep (in seconds)
+#define TIME_TO_SLEEP_HIGH  60        //Time ESP32 will go to sleep (in seconds)
+#define TIME_TO_SLEEP_MEDIUM  300
+#define TIME_TO_SLEEP_LOW  1800
 #define TIME_CLIENT_WAITING 15
 
 bool _BLEClientConnected = false;
@@ -25,7 +27,6 @@ BLEDescriptor BatteryLevelDescriptor(BLEUUID((uint16_t)0x2901));
 class MyServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       _BLEClientConnected = true; 
-      digitalWrite(led, HIGH);
     };
 
     void onDisconnect(BLEServer* pServer) {
@@ -77,22 +78,36 @@ void stopBle() {
 }
 const float bat_min = 3.2; // volts - cut off voltage
 const float bat_max = 4.2;  // volts - max voltage
-
+void ble_status_led(void *pvParameters) {
+  int lastLedStatus = LOW;
+  while(1) {
+    if(_BLEClientConnected) {
+      digitalWrite(led, HIGH);
+    } else {
+      lastLedStatus = lastLedStatus == LOW ? HIGH : LOW;
+      digitalWrite(led, lastLedStatus);
+    }
+    delay(500);
+  }
+}
 
 void setup() {
   pinMode(led, OUTPUT);
 
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   
   Serial.begin(115200);
   
   Serial.println("Battery Level Indicator - BLE");
   
   InitBLE();
+  
+  // Create a task to blink led
+  xTaskCreatePinnedToCore(ble_status_led, "ble led", 2048, NULL, 1, NULL, 1);
   unsigned long start = millis();
+  uint8_t level = 100;
   while(_BLEClientConnected || millis() - start < TIME_CLIENT_WAITING * 1000) {    
     float sensorValue = (analogRead(sensorPin) / 4095.0)*2.0*3.3*1.1;
-    uint8_t level = (uint8_t)min(100, max(0, (int)map((int)(sensorValue * 100), (int)(bat_min * 100), (int)(bat_max * 100), 0, 100))); 
+    level = (uint8_t)min(100, max(0, (int)map((int)(sensorValue * 100), (int)(bat_min * 100), (int)(bat_max * 100), 0, 100))); 
     BatteryLevelCharacteristic.setValue(&level, 1);
     BatteryLevelCharacteristic.notify();
     Serial.print("Battery Level");
@@ -103,6 +118,17 @@ void setup() {
   }
   
   stopBle();
+
+
+  int sleeptime;
+  if(level < 30) {
+    sleeptime = TIME_TO_SLEEP_LOW;
+  } else if(level < 50) {
+    sleeptime = TIME_TO_SLEEP_MEDIUM;
+  } else {
+    sleeptime = TIME_TO_SLEEP_HIGH;
+  }
+  esp_sleep_enable_timer_wakeup(sleeptime * uS_TO_S_FACTOR);
   //Go to sleep now
   esp_deep_sleep_start();
 }
