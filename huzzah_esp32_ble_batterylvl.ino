@@ -8,6 +8,7 @@
  */
 #define led 13
 int sensorPin = A13;    // select the input pin for the potentiometer
+#include "esp32-hal-cpu.h"
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h> //Library to use BLE as server
@@ -96,6 +97,15 @@ void setup() {
 
   
   Serial.begin(115200);
+
+  Serial.print("CPU ");
+  Serial.print(getCpuFrequencyMhz());
+  Serial.println(" MHz");
+  setCpuFrequencyMhz(80); 
+  
+  Serial.print("CPU ");
+  Serial.print(getCpuFrequencyMhz());
+  Serial.println(" MHz");
   
   Serial.println("Battery Level Indicator - BLE");
   
@@ -110,10 +120,11 @@ void setup() {
     level = (uint8_t)min(100, max(0, (int)map((int)(sensorValue * 100), (int)(bat_min * 100), (int)(bat_max * 100), 0, 100))); 
     BatteryLevelCharacteristic.setValue(&level, 1);
     BatteryLevelCharacteristic.notify();
-    Serial.print("Battery Level");
+    Serial.print("Battery Level ");
     Serial.print(sensorValue);
-    Serial.print(" - ");
-    Serial.println(level);
+    Serial.print(" V - ");
+    Serial.print(level);
+    Serial.println(" %");
     delay(5000);
   }
   
